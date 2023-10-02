@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta content="width=device-width, initial-scale=1" name="viewport"><meta content="So far, we have been using what is known as Gen&apos;s dynamic modeling language which provides an implementation of the @gen macro to define generative functions. In this lecture, we will examine how these work under the hood. First, let&apos;s load Gen and the Distributions Julia library which provides basic sampling and scoring support for commonly used probability distributions." property="og:description"><meta content="GenLite" property="og:title"><meta content="article:clerk" property="og:type"><meta content="summary_large_image" name="twitter:card"><script src="https://cdn.tailwindcss.com?plugins=typography" type="text/javascript"></script><script>tailwind.config = {
+  darkMode: "class",
+  content: ["./tw/viewer.js", "./tw/**/*.edn"],
+  safelist: ['dark'],
+  theme: {
+    extend: {},
+    fontFamily: {
+      sans: ["Fira Sans", "-apple-system", "BlinkMacSystemFont", "sans-serif"],
+      serif: ["PT Serif", "serif"],
+      mono: ["Fira Mono", "monospace"]
+    }
+  },
+  variants: {
+    extend: {},
+  },
+  plugins: [],
+}
+</script><style type="text/tailwindcss">@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-size: 18px;
+  }
+  @media (max-width: 600px) {
+    html {
+      font-size: 16px;
+    }
+  }
+  .font-condensed { font-family: "Fira Sans Condensed", sans-serif; }
+  .font-inter     { font-family: "Inter", sans-serif; }
+  body {
+    @apply font-serif antialiased text-gray-900 sm:overscroll-y-none;
+  }
+  code, .code {
+    @apply font-mono text-sm text-gray-900 bg-slate-50 px-0.5 py-px rounded dark:bg-gray-800;
+  }
+  code::before, code::after { @apply content-none !important; }
+  h1, h3, h4, h5, h6 {
+    @apply font-condensed font-bold mt-8 first:mt-0;
+  }
+  h2 {
+    /*We cannot collapse margins due to nesting but we want to*/
+    /*keep the h2’s large margin visible*/
+    @apply font-condensed font-bold mt-8 first:mt-2;
+  }
+  h1 { @apply text-4xl; }
+  h2 { @apply text-3xl; }
+  h3 { @apply text-2xl; }
+
+  @media print {
+      h1 { @apply text-2xl !important; }
+      h2 { @apply text-xl !important; }
+      h3 { @apply text-lg !important; }
+  }
+
+  button { @apply focus:outline-none; }
+  strong { @apply font-bold; }
+  em     { @apply italic; }
+  pre    { @apply m-0 font-mono; }
+  table img { @apply inline-block; }
+}
+
+/* Compatibility */
+/* --------------------------------------------------------------- */
+/* TODO: Verify which colors are in use and replace with Tailwind
+   colors accordingly. Move Nj-specific styles out of here. */
+
+:root {
+  --teal-color: #31afd0;
+  --dark-teal-color: #095960;
+  --near-black-color: #2e2e2c;
+  --red-color: #d64242;
+  --dark-blue-color: #1f2937;
+  --dark-blue-60-color: rgba(28, 42, 56, 0.6);
+  --gray-panel-color: rgba(239, 241, 245, 1.000);
+  --brand-color: var(--dark-blue-color);
+  --link-color: #5046e4;
+  --command-bar-selected-color: var(--teal-color);
+}
+
+.serif      { @apply font-serif; }
+.sans-serif { @apply font-sans; }
+.monospace  { @apply font-mono; }
+.inter      { @apply font-inter; }
+
+.border-color-teal { border-color: var(--dark-teal-color); }
+.teal { color: var(--teal-color); }
+.bg-dark-blue { background: var(--dark-blue-color); }
+.bg-dark-blue-60 { background: rgba(28, 42, 56, 0.6); }
+.bg-gray-panel { background: var(--gray-panel-color); }
+.text-dark-blue  { color: var(--dark-blue-color); }
+.text-dark-blue-60 { color: var(--dark-blue-60-color); }
+.border-dark-blue-30 { border-color: rgba(28, 42, 56, 0.6); }
+.text-brand { color: var(--dark-blue-color); }
+.bg-brand { background: var(--dark-blue-color); }
+.text-selected { color: white; }
+.red { color: var(--red-color); }
+
+/* Disclose Button */
+/* --------------------------------------------------------------- */
+
+.disclose {
+  @apply content-none border-solid cursor-pointer inline-block relative mr-[3px] top-[-2px] transition-all;
+  border-color: var(--near-black-color) transparent;
+  border-width: 6px 4px 0;
+}
+.disclose:hover {
+  border-color: var(--near-black-color) transparent;
+}
+.dark .disclose,
+.dark .disclose:hover {
+  border-color: white transparent;
+}
+.disclose.collapsed {
+  @apply rotate-[-90deg];
+}
+
+/* Layout */
+/* --------------------------------------------------------------- */
+
+.page {
+  @apply max-w-5xl mx-auto px-12 box-border flex-shrink-0;
+}
+.max-w-prose { @apply max-w-[46rem] !important; }
+.max-w-wide  { @apply max-w-3xl !important; }
+
+/* List Styles */
+/* --------------------------------------------------------------- */
+
+.task-list-item + .task-list-item,
+.markdown-viewer ul ul {
+  @apply mt-1 mb-0;
+}
+
+/* compact TOC */
+.markdown-viewer .toc ul {
+  list-style: none;
+  @apply my-1;
+}
+
+/* Code Viewer */
+/* --------------------------------------------------------------- */
+
+.code-viewer {
+  @apply font-mono bg-slate-100 rounded-sm text-sm overflow-x-auto dark:bg-gray-800;
+}
+.code-listing  {
+    @apply -ml-8 -mr-8 relative !important;
+}
+.code-viewer .cm-content {
+  @apply py-4 px-8;
+}
+@media (min-width: 960px){
+    .notebook-viewer .code-viewer .cm-content {
+        @apply pl-12;
+    }
+    .notebook-viewer .code-listing {
+        width: 48rem !important;
+        @apply -ml-12 mr-0 !important;
+    }
+}
+/* Don’t show focus outline when double-clicking cell in Safari */
+.cm-scroller { @apply focus:outline-none; }
+
+/* Syntax Highlighting */
+/* --------------------------------------------------------------- */
+
+.inspected-value { @apply text-xs font-mono leading-[1.25rem]; }
+.cmt-strong, .cmt-heading { @apply font-bold; }
+.cmt-italic, .cmt-emphasis { @apply italic; }
+.cmt-strikethrough { @apply line-through; }
+.cmt-link { @apply underline; }
+.untyped-value { @apply whitespace-nowrap; }
+
+.cm-editor, .cmt-default, .result-viewer {
+  @apply text-slate-800 dark:text-slate-300;
+}
+.cmt-keyword {
+  @apply text-purple-800 dark:text-pink-400;
+}
+.cmt-atom, .cmt-bool, .cmt-url, .cmt-contentSeparator, .cmt-labelName {
+  @apply text-blue-900 dark:text-blue-300;
+}
+.cmt-inserted, .cmt-literal {
+  @apply text-emerald-700 dark:text-emerald-200;
+}
+.cmt-string, .cmt-deleted {
+  @apply text-rose-700 dark:text-sky-300;
+}
+.cmt-italic.cmt-string {
+  @apply dark:text-sky-200;
+}
+.cmt-regexp, .cmt-escape {
+  @apply text-orange-500 dark:text-orange-300;
+}
+.cmt-variableName {
+  @apply text-blue-800 dark:text-sky-300;
+}
+.cmt-typeName, .cmt-namespace {
+  @apply text-emerald-600 dark:text-emerald-300;
+}
+.cmt-className {
+  @apply text-teal-600 dark:text-teal-200;
+}
+.cmt-macroName {
+  @apply text-teal-700 dark:text-teal-200;
+}
+.cmt-propertyName {
+  @apply text-blue-700 dark:text-blue-200;
+}
+.cmt-comment {
+  @apply text-slate-500 dark:text-slate-400;
+}
+.cmt-meta {
+  @apply text-slate-600 dark:text-slate-400;
+}
+.cmt-invalid {
+  @apply text-red-500 dark:text-red-300;
+}
+
+.result-data {
+  @apply font-mono text-sm overflow-x-auto whitespace-nowrap leading-normal;
+}
+.result-data::-webkit-scrollbar, .path-nav::-webkit-scrollbar {
+  @apply h-0;
+}
+.result-data-collapsed {
+  @apply whitespace-nowrap;
+}
+.result-data-field {
+  @apply ml-4 whitespace-nowrap;
+}
+.result-data-field-link{
+  @apply ml-4 whitespace-nowrap cursor-pointer;
+}
+.result-data-field-link:hover {
+  @apply text-black bg-black/5;
+}
+.result-text-empty {
+  color: rgba(0,0,0,.3);
+}
+.browsify-button:hover {
+  box-shadow: -2px 0 0 2px #edf2f7;
+}
+
+/* Prose */
+/* --------------------------------------------------------------- */
+
+.notebook-viewer,
+.markdown-viewer {
+  @apply prose
+    dark:prose-invert
+    prose-a:text-blue-600 prose-a:no-underline hover:prose-a:underline
+    dark:prose-a:text-blue-300
+    prose-p:mt-4 prose-p:leading-snug
+    prose-ol:mt-4 prose-ol:mb-6 prose-ol:leading-snug
+    prose-ul:mt-4 prose-ul:mb-6 prose-ul:leading-snug
+    prose-blockquote:mt-4 prose-blockquote:leading-snug
+    prose-hr:mt-6 prose-hr:border-t-2 prose-hr:border-solid prose-hr:border-slate-200
+    prose-figure:mt-4
+    prose-figcaption:mt-2 prose-figcaption:text-xs
+    prose-headings:mb-4
+    prose-table:mt-0
+    prose-th:mb-0
+    prose-img:my-0
+    prose-code:font-medium prose-code:bg-slate-100
+    max-w-none;
+}
+.markdown-viewer blockquote p:first-of-type:before,
+.markdown-viewer blockquote p:last-of-type:after {
+  @apply content-none;
+}
+.markdown-node-viewer.result-viewer.fragment-item {
+    @apply mb-0 !important;
+}
+
+/* Images */
+/* --------------------------------------------------------------- */
+
+
+/* Todo Lists */
+/* --------------------------------------------------------------- */
+
+.contains-task-list {
+  @apply pl-6 list-none;
+}
+.contains-task-list input[type="checkbox"] {
+  @apply appearance-none h-4 w-4 rounded border border-slate-200 relative mr-[0.3rem] ml-[-1.5rem] top-[0.15rem];
+}
+.contains-task-list input[type="checkbox"]:checked {
+  @apply border-indigo-600 bg-indigo-600 bg-no-repeat bg-contain;
+  background-image: url("data:image/svg+xml,%3csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3e%3cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2-2a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3e%3c/svg%3e");
+}
+
+/* Markdown TOC */
+/* --------------------------------------------------------------- */
+
+.markdown-viewer .toc      { @apply mt-4; }
+.markdown-viewer h1 + .toc { @apply mt-8; }
+
+.markdown-viewer .toc h1,
+.markdown-viewer .toc h2,
+.markdown-viewer .toc h3,
+.markdown-viewer .toc h4,
+.markdown-viewer .toc h5,
+.markdown-viewer .toc h6 {
+  @apply text-base text-indigo-600 font-sans my-0;
+}
+.markdown-viewer .toc a {
+  @apply text-indigo-600 font-normal no-underline hover:underline;
+}
+.markdown-viewer .toc li    { @apply m-0; }
+.markdown-viewer .toc ul ul { @apply pl-4; }
+
+/* Notebook Spacing */
+/* --------------------------------------------------------------- */
+
+.markdown-viewer *:first-child:not(.code-viewer):not(li):not(h2):not(.sidenote) { @apply mt-0; }
+/*.viewer + .viewer { @apply mt-6; }*/
+.viewer + .result-viewer { @apply mt-0; }
+.code-viewer + .result-viewer { @apply mt-3; }
+.markdown-viewer + .markdown-viewer { @apply mt-0; }
+
+/* Sidenotes */
+/* --------------------------------------------------------------- */
+
+.sidenote-ref {
+  @apply top-[-0.5em] w-auto h-auto inline border-0 bg-transparent m-0 pointer-events-none;
+}
+.sidenote {
+  @apply block font-sans text-xs mt-4 bg-slate-100 dark:bg-slate-800 p-4;
+  font-style: normal;
+  font-weight: normal;
+}
+.sidenote-container {
+  @apply mb-4;
+}
+@media (min-width: 860px) {
+  .sidenote sup { @apply inline; }
+  .sidenote-column {
+    @apply w-[165px] absolute right-0 top-0 -mr-[205px];
+  }
+  .sidenote {
+    @apply bg-transparent dark:bg-transparent p-0;
+  }
+  .sidenote:first-child {
+    @apply mt-1;
+  }
+  .sidenotes-layout .markdown-viewer {
+    @apply pr-[241px];
+  }
+  .sidenote-container {
+    @apply relative mb-0;
+  }
+  .sidenotes-layout h1 {
+    @apply w-[756px] !important;
+  }
+}
+.code-viewer + .viewer:not(.code-viewer):not(.code-viewer-folded),
+.code-viewer-folded + .viewer:not(.code-viewer):not(.code-viewer-folded),
+.result-viewer:not(.markdown-node-viewer) + .result-viewer {
+  @apply mt-2;
+}
+.code-viewer + .code-viewer-folded {
+  @apply mt-4;
+}
+.result-viewer {
+  @apply leading-tight mb-6;
+}
+.code-viewer.fragment-item.result-viewer {
+  @apply mb-0 !important;
+}
+.result-viewer figure {
+  @apply mt-0 !important;
+}
+@media (min-width: 768px) {
+  .devcard-desc > div {
+    @apply max-w-full m-0;
+  }
+}
+
+/* Command Palette */
+/* --------------------------------------------------------------- */
+
+.nj-commands-input {
+  @apply bg-transparent text-white;
+}
+.nj-context-menu-item:hover:not([disabled]) {
+  @apply cursor-pointer;
+  background-color: rgba(255,255,255,.14);
+}
+
+/* Devdocs */
+/* --------------------------------------------------------------- */
+
+.logo, .logo-white {
+  @apply block indent-[-999em];
+  background: url(/images/nextjournal-logo.svg) center center no-repeat;
+}
+.devdocs-body {
+  @apply font-inter;
+}
+
+/* Workarounds */
+/* --------------------------------------------------------------- */
+
+/* Fixes vega viewer resizing into infinity */
+.vega-embed .chart-wrapper { @apply h-auto !important; }
+/* fixes fraction separators being overridden by tw’s border-color */
+.katex * { @apply border-black; }
+
+@media print {
+    .dark-mode-toggle,
+    .toc-toggle { @apply hidden; }
+    .notebook-viewer { @apply pt-0; font-size: 12pt !important; margin-left: 0 !important; }
+    .code-viewer .cm-content,
+    .viewer-code .cm-content { @apply whitespace-pre-wrap !important; overflow: none; }
+    .code-viewer .cm-line { font-size: 12pt !important; }
+    html * { page-break-inside: avoid !important; }
+    .toc-panel { @apply hidden; }
+}
+</style><script src="https://cas.clerk.garden/tree/8VxCcd2nQqrhPLVttyyM5Rnv8qMYcjeSEjgJnhZTvCgVhmgsNWWeusxmVkfX9ajrXmFqQEdVmtdHSoCdHLG2XTsXXB/.clerk/shadow-cljs/main.js" type="module"></script><link href="https://cdn.jsdelivr.net/npm/katex@0.13.13/dist/katex.min.css" rel="stylesheet" type="text/css"><link href="https://fonts.bunny.net" rel="preconnect"><link href="https://fonts.bunny.net/css?family=fira-mono:400,700%7Cfira-sans:400,400i,500,500i,700,700i%7Cfira-sans-condensed:700,700i%7Cpt-serif:400,400i,700,700i" rel="stylesheet" type="text/css"></head><body class="dark:bg-gray-900"><div id="clerk"></div><script type="module">let viewer = nextjournal.clerk.sci_env
+let state = "{:bundle? false, :path->doc {\"notebooks/lectures/genlite.clj\" {:path [], :nextjournal/value {:toc [{:title \"GenLite\", :emoji nil, :path \"#genlite\", :items [{:title \"Implementations\", :emoji nil, :path \"#implementations\", :items []} {:title \"Implementing simulate\", :emoji nil, :path \"#implementing-simulate\", :items []}]}], :sidenotes? false, :toc-visibility false, :atom-var-name->state #viewer-eval (nextjournal.clerk.render/intern-atoms! {}), :ns #viewer-eval (ns lectures.genlite), :file \"notebooks/lectures/genlite.clj\", :scope lectures.genlite, :bundle? false, :header {:path [], :nextjournal/value [:div.viewer.w-full.max-w-prose.px-8.not-prose.mt-3 [:div.mb-8.text-xs.sans-serif.text-slate-400 nil [:<> [:a.font-medium.border-b.border-dotted.border-slate-300.hover:text-indigo-500.hover:border-indigo-500.dark:border-slate-500.dark:hover:text-white.dark:hover:border-white.transition {:href \"./../../\"} \"Index\"] [:span.mx-2 \"•\"]] [:span \"Generated with \" [:a.font-medium.border-b.border-dotted.border-slate-300.hover:text-indigo-500.hover:border-indigo-500.dark:border-slate-500.dark:hover:text-white.dark:hover:border-white.transition {:href \"https://clerk.vision\"} \"Clerk\"] \" from \" [:a.font-medium.border-b.border-dotted.border-slate-300.hover:text-indigo-500.hover:border-indigo-500.dark:border-slate-500.dark:hover:text-white.dark:hover:border-white.transition {:href \"https://github.com/sritchie/tim-class/blob/573ebd011b9e427199a1f35ba3858ca43f9b7243/notebooks/lectures/genlite.clj\"} \"notebooks/lectures/genlite.clj\" [:<> \"@\" [:span.tabular-nums \"573ebd0\"]]]]]], :nextjournal/viewer {:name nextjournal.clerk.viewer/html-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-html, :hash \"5drpr3yzJ1CcHNbRHnK2sVyn7YUmXB\"}}, :open-graph {:type \"article:clerk\", :title \"GenLite\", :description \"So far, we have been using what is known as Gen's dynamic modeling language which provides an implementation of the @gen macro to define generative functions. In this lecture, we will examine how these work under the hood. First, let's load Gen and the Distributions Julia library which provides basic sampling and scoring support for commonly used probability distributions.\"}, :title \"GenLite\", :blocks [{:path [], :nextjournal/value [:div.viewer.markdown-viewer.w-full.max-w-prose.px-8 {:data-block-id \"user/markdown-5dtmMSS8fXhaN7QADzUbq8RznNJVQe\"} [\"h1\" {:id \"genlite\"} [:<> \"GenLite\"]] [\"h2\" {:id \"implementations\"} [:<> \"Implementations\"]] [:p [:<> \"So far, we have been using what is known as Gen's dynamic modeling language\"] [#viewer-eval nextjournal.clerk.render/inspect-presented {:nextjournal/value [:<> \" \"], :nextjournal/viewer {:name nextjournal.clerk.viewer/html-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-html, :hash \"5drpr3yzJ1CcHNbRHnK2sVyn7YUmXB\"}}] [:<> \"which provides an implementation of the \"] [:code [:<> \"@gen\"]] [:<> \" macro to define generative\"] [#viewer-eval nextjournal.clerk.render/inspect-presented {:nextjournal/value [:<> \" \"], :nextjournal/viewer {:name nextjournal.clerk.viewer/html-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-html, :hash \"5drpr3yzJ1CcHNbRHnK2sVyn7YUmXB\"}}] [:<> \"functions. In this lecture, we will examine how these work under the hood.\"] [#viewer-eval nextjournal.clerk.render/inspect-presented {:nextjournal/value [:<> \" \"], :nextjournal/viewer {:name nextjournal.clerk.viewer/html-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-html, :hash \"5drpr3yzJ1CcHNbRHnK2sVyn7YUmXB\"}}] [:<> \"First, let's load Gen and the \"] [:code [:<> \"Distributions\"]] [:<> \" Julia library which provides\"] [#viewer-eval nextjournal.clerk.render/inspect-presented {:nextjournal/value [:<> \" \"], :nextjournal/viewer {:name nextjournal.clerk.viewer/html-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-html, :hash \"5drpr3yzJ1CcHNbRHnK2sVyn7YUmXB\"}}] [:<> \"basic sampling and scoring support for commonly used probability\"] [#viewer-eval nextjournal.clerk.render/inspect-presented {:nextjournal/value [:<> \" \"], :nextjournal/viewer {:name nextjournal.clerk.viewer/html-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-html, :hash \"5drpr3yzJ1CcHNbRHnK2sVyn7YUmXB\"}}] [:<> \"distributions.\"]]], :nextjournal/render-opts {:id \"user/markdown-5dtmMSS8fXhaN7QADzUbq8RznNJVQe\"}, :nextjournal/viewer {:name nextjournal.clerk.viewer/markdown-node-viewer, :render-fn #viewer-fn identity, :hash \"5dsg4Bx9A9L7WvvCgamUoRtxUsmYCe\"}} {:path [], :nextjournal/value \"(ns lectures.genlite\\n  (:require [gen.dynamic :as dynamic :refer [gen]]\\n            [gen.generative-function :as gf]\\n            [gen.distribution.kixi :as dist]))\", :nextjournal/render-opts {:loc {:line 12, :end-line 15, :column 1, :end-column 47}, :id \"lectures.genlite/anon-expr-5dqqB9K4FeK7L3m6ZHH9nRLS5hDW3W-code\"}, :nextjournal/viewer {:name nextjournal.clerk.viewer/code-block-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-code-block, :hash \"5dru1FUcVRTRrVKJFbNw4FG2wXmiwB\"}} {:path [], :nextjournal/value [:div.viewer.markdown-viewer.w-full.max-w-prose.px-8 {:data-block-id \"lectures.genlite/markdown-5dshHbbxMrwZhEvrYewRMTA9w4ywBw\"} [:p [:<> \"In order to understand how Gen works, we will introduce a simplified variant\"] [#viewer-eval nextjournal.clerk.render/inspect-presented {:nextjournal/value [:<> \" \"], :nextjournal/viewer {:name nextjournal.clerk.viewer/html-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-html, :hash \"5drpr3yzJ1CcHNbRHnK2sVyn7YUmXB\"}}] [:<> \"of the language. First, instead of using the \"] [:code [:<> \"@gen\"]] [:<> \" macro to define\"] [#viewer-eval nextjournal.clerk.render/inspect-presented {:nextjournal/value [:<> \" \"], :nextjournal/viewer {:name nextjournal.clerk.viewer/html-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-html, :hash \"5drpr3yzJ1CcHNbRHnK2sVyn7YUmXB\"}}] [:<> \"generative functions, we will define them directly. Amongst other things, the\"] [#viewer-eval nextjournal.clerk.render/inspect-presented {:nextjournal/value [:<> \" \"], :nextjournal/viewer {:name nextjournal.clerk.viewer/html-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-html, :hash \"5drpr3yzJ1CcHNbRHnK2sVyn7YUmXB\"}}] [:<> \"macro is responsible for desugaring the \"] [:code [:<> \"~\"]] [:<> \" operator. Instead of using this\"] [#viewer-eval nextjournal.clerk.render/inspect-presented {:nextjournal/value [:<> \" \"], :nextjournal/viewer {:name nextjournal.clerk.viewer/html-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-html, :hash \"5drpr3yzJ1CcHNbRHnK2sVyn7YUmXB\"}}] [:<> \"operator, we will assume that we have access to a \"] [:code [:<> \"sample\"]] [:<> \" function which\"] [#viewer-eval nextjournal.clerk.render/inspect-presented {:nextjournal/value [:<> \" \"], :nextjournal/viewer {:name nextjournal.clerk.viewer/html-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-html, :hash \"5drpr3yzJ1CcHNbRHnK2sVyn7YUmXB\"}}] [:<> \"takes three arguments:\"]] [#viewer-eval nextjournal.clerk.render/inspect-presented {:nextjournal/value [:div.code-viewer.code-listing [#viewer-eval nextjournal.clerk.render/inspect-presented {:path [0], :nextjournal/value \"1. the name of the sampled random variable\\n2. the distribution to sample from and\\n3. the arguments of the distribution to be sampled from.\", :nextjournal/render-opts {:language \"clojure\"}, :nextjournal/viewer {:name nextjournal.clerk.viewer/code-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-code, :hash \"5dsJQw12yyyd7TcZEf52VSHxnqnJUC\"}}]], :nextjournal/viewer {:name nextjournal.clerk.viewer/html-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-html, :hash \"5drpr3yzJ1CcHNbRHnK2sVyn7YUmXB\"}}] [:p [:<> \"We will assume that the implementation of the sample function is passed as an\"] [#viewer-eval nextjournal.clerk.render/inspect-presented {:nextjournal/value [:<> \" \"], :nextjournal/viewer {:name nextjournal.clerk.viewer/html-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-html, :hash \"5drpr3yzJ1CcHNbRHnK2sVyn7YUmXB\"}}] [:<> \"argument to our generative function. The \"] [:code [:<> \"@gen\"]] [:<> \" macro (essentially) desugars\"] [#viewer-eval nextjournal.clerk.render/inspect-presented {:nextjournal/value [:<> \" \"], :nextjournal/viewer {:name nextjournal.clerk.viewer/html-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-html, :hash \"5drpr3yzJ1CcHNbRHnK2sVyn7YUmXB\"}}] [:<> \"the function by adding a similar \"] [:code [:<> \"sample\"]] [:<> \" function argument. Here are\"] [#viewer-eval nextjournal.clerk.render/inspect-presented {:nextjournal/value [:<> \" \"], :nextjournal/viewer {:name nextjournal.clerk.viewer/html-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-html, :hash \"5drpr3yzJ1CcHNbRHnK2sVyn7YUmXB\"}}] [:<> \"implementations of \"] [:code [:<> \"flip-biased-coin\"]] [:<> \" in both Gen and GenLite.\"]]], :nextjournal/render-opts {:id \"lectures.genlite/markdown-5dshHbbxMrwZhEvrYewRMTA9w4ywBw\"}, :nextjournal/viewer {:name nextjournal.clerk.viewer/markdown-node-viewer, :render-fn #viewer-fn identity, :hash \"5dsg4Bx9A9L7WvvCgamUoRtxUsmYCe\"}} {:path [], :nextjournal/value \"(def flip-biased-coin\\n  (gen [n]\\n    (let [theta (dynamic/trace! :theta dist/beta 1 1)]\\n      (mapv (fn [i]\\n              (dynamic/trace! [:flip i] dist/bernoulli theta))\\n            (range n)))))\", :nextjournal/render-opts {:loc {:line 33, :end-line 38, :column 1, :end-column 26}, :id \"lectures.genlite/flip-biased-coin-code\"}, :nextjournal/viewer {:name nextjournal.clerk.viewer/code-block-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-code-block, :hash \"5dru1FUcVRTRrVKJFbNw4FG2wXmiwB\"}} {:path [], :nextjournal/value {:nextjournal/presented {:path [], :nextjournal/value [{:path [0], :nextjournal/value [{:path [0 0], :nextjournal/value :clojure-fn, :nextjournal/viewer {:name nextjournal.clerk.viewer/keyword-viewer, :render-fn #viewer-fn (fn [x] [:span.cmt-atom.inspected-value (str x)]), :hash \"5dsNzdTzwn7chgKvDeDf7Y1m4rScyE\"}} {:path [0 1], :nextjournal/value \"#object[lectures.genlite$fn__36230 0x5e9eb48a \\\"lectures.genlite$fn__36230@5e9eb48a\\\"]\", :nextjournal/viewer {:name nextjournal.clerk.viewer/read+inspect-viewer, :render-fn #viewer-fn (fn [x] (try [nextjournal.clerk.render/inspect (nextjournal.clerk.viewer/read-string-without-tag-table x)] (catch js/Error _e (nextjournal.clerk.render/render-unreadable-edn x)))), :hash \"5drRXBniP17rFCk8gwCFLmxTJx4Avj\"}}], :nextjournal/viewer {:name nextjournal.clerk.viewer/map-entry-viewer, :render-fn #viewer-fn (fn [xs opts] (into [:<>] (comp (nextjournal.clerk.render/inspect-children opts) (interpose \" \")) xs)), :page-size 2, :hash \"5dt6ojEGnSL5A2CUa5cvAyypuTUA5J\"}}], :nextjournal/viewer {:name nextjournal.clerk.viewer/map-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-map, :opening-paren \"{\", :closing-paren (\"}\"), :page-size 10, :hash \"5drc3ac5ux7kS4h2vozdxwsrKDqSmn\"}, :nextjournal/render-opts {:id \"lectures.genlite/flip-biased-coin-result\"}}, :nextjournal/blob-id \"5drKRiUC1DEDxQXFzH1MnKA2hUiAy7\"}, :nextjournal/render-opts {:id \"lectures.genlite/flip-biased-coin-result\"}, :nextjournal/viewer {:name nextjournal.clerk.viewer/result-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-result, :hash \"5dtGVHesd2XCTLFYF3aY4kJvkrX1x1\"}} {:path [], :nextjournal/value \"(defn flip-biased-coin-lite [sample n]\\n  (let [theta (sample :theta dist/beta 1 1)]\\n    (mapv (fn [i]\\n            (sample [:flip i] dist/bernoulli theta))\\n          (range n))))\", :nextjournal/render-opts {:loc {:line 40, :end-line 44, :column 1, :end-column 23}, :id \"lectures.genlite/flip-biased-coin-lite-code\"}, :nextjournal/viewer {:name nextjournal.clerk.viewer/code-block-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-code-block, :hash \"5dru1FUcVRTRrVKJFbNw4FG2wXmiwB\"}} {:path [], :nextjournal/value {:nextjournal/presented {:path [], :nextjournal/value \"#object[lectures.genlite$flip_biased_coin_lite 0x73636d23 \\\"lectures.genlite$flip_biased_coin_lite@73636d23\\\"]\", :nextjournal/viewer {:name nextjournal.clerk.viewer/read+inspect-viewer, :render-fn #viewer-fn (fn [x] (try [nextjournal.clerk.render/inspect (nextjournal.clerk.viewer/read-string-without-tag-table x)] (catch js/Error _e (nextjournal.clerk.render/render-unreadable-edn x)))), :hash \"5drRXBniP17rFCk8gwCFLmxTJx4Avj\"}, :nextjournal/render-opts {:id \"lectures.genlite/flip-biased-coin-lite-result\"}}, :nextjournal/blob-id nil}, :nextjournal/render-opts {:id \"lectures.genlite/flip-biased-coin-lite-result\"}, :nextjournal/viewer {:name nextjournal.clerk.viewer/result-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-result, :hash \"5dtGVHesd2XCTLFYF3aY4kJvkrX1x1\"}} {:path [], :nextjournal/value [:div.viewer.markdown-viewer.w-full.max-w-prose.px-8 {:data-block-id \"lectures.genlite/markdown-5dtw7cYVVJeW8pStcPz2tSmYKaPsuz\"} [:p [:<> \"Here is a version of Bayesian linear regression expressed both in terms of Gen and GenLite.\"]]], :nextjournal/render-opts {:id \"lectures.genlite/markdown-5dtw7cYVVJeW8pStcPz2tSmYKaPsuz\"}, :nextjournal/viewer {:name nextjournal.clerk.viewer/markdown-node-viewer, :render-fn #viewer-fn identity, :hash \"5dsg4Bx9A9L7WvvCgamUoRtxUsmYCe\"}} {:path [], :nextjournal/value \"(def line-model\\n  (gen [xs]\\n    (let [m   (dist/normal 0 1)\\n          b   (dist/normal 0 2)\\n          eps (dist/normal 0 2.5)]\\n      (doall\\n       (map-indexed\\n        (fn [i x]\\n          (dynamic/trace! [:y i] dist/normal (+ (* m x) b) (* eps eps)))\\n        xs)))))\", :nextjournal/render-opts {:loc {:line 48, :end-line 57, :column 1, :end-column 16}, :id \"lectures.genlite/line-model-code\"}, :nextjournal/viewer {:name nextjournal.clerk.viewer/code-block-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-code-block, :hash \"5dru1FUcVRTRrVKJFbNw4FG2wXmiwB\"}} {:path [], :nextjournal/value {:nextjournal/presented {:path [], :nextjournal/value [{:path [0], :nextjournal/value [{:path [0 0], :nextjournal/value :clojure-fn, :nextjournal/viewer {:name nextjournal.clerk.viewer/keyword-viewer, :render-fn #viewer-fn (fn [x] [:span.cmt-atom.inspected-value (str x)]), :hash \"5dsNzdTzwn7chgKvDeDf7Y1m4rScyE\"}} {:path [0 1], :nextjournal/value \"#object[lectures.genlite$fn__36237 0x4e3773ef \\\"lectures.genlite$fn__36237@4e3773ef\\\"]\", :nextjournal/viewer {:name nextjournal.clerk.viewer/read+inspect-viewer, :render-fn #viewer-fn (fn [x] (try [nextjournal.clerk.render/inspect (nextjournal.clerk.viewer/read-string-without-tag-table x)] (catch js/Error _e (nextjournal.clerk.render/render-unreadable-edn x)))), :hash \"5drRXBniP17rFCk8gwCFLmxTJx4Avj\"}}], :nextjournal/viewer {:name nextjournal.clerk.viewer/map-entry-viewer, :render-fn #viewer-fn (fn [xs opts] (into [:<>] (comp (nextjournal.clerk.render/inspect-children opts) (interpose \" \")) xs)), :page-size 2, :hash \"5dt6ojEGnSL5A2CUa5cvAyypuTUA5J\"}}], :nextjournal/viewer {:name nextjournal.clerk.viewer/map-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-map, :opening-paren \"{\", :closing-paren (\"}\"), :page-size 10, :hash \"5drc3ac5ux7kS4h2vozdxwsrKDqSmn\"}, :nextjournal/render-opts {:id \"lectures.genlite/line-model-result\"}}, :nextjournal/blob-id \"5dtCKFLwCFP8qzdyEebwkLeAWpfPkM\"}, :nextjournal/render-opts {:id \"lectures.genlite/line-model-result\"}, :nextjournal/viewer {:name nextjournal.clerk.viewer/result-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-result, :hash \"5dtGVHesd2XCTLFYF3aY4kJvkrX1x1\"}} {:path [], :nextjournal/value \"(defn line-model-lite [sample xs]\\n  (let [m   (dist/normal 0 1)\\n        b   (dist/normal 0 2)\\n        eps (dist/normal 0 2.5)]\\n    (doall\\n     (map-indexed\\n      (fn [i x]\\n        (sample [:y i] dist/normal (+ (* m x) b) (* eps eps)))\\n      xs))))\", :nextjournal/render-opts {:loc {:line 59, :end-line 67, :column 1, :end-column 13}, :id \"lectures.genlite/line-model-lite-code\"}, :nextjournal/viewer {:name nextjournal.clerk.viewer/code-block-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-code-block, :hash \"5dru1FUcVRTRrVKJFbNw4FG2wXmiwB\"}} {:path [], :nextjournal/value {:nextjournal/presented {:path [], :nextjournal/value \"#object[lectures.genlite$line_model_lite 0x34aa4b40 \\\"lectures.genlite$line_model_lite@34aa4b40\\\"]\", :nextjournal/viewer {:name nextjournal.clerk.viewer/read+inspect-viewer, :render-fn #viewer-fn (fn [x] (try [nextjournal.clerk.render/inspect (nextjournal.clerk.viewer/read-string-without-tag-table x)] (catch js/Error _e (nextjournal.clerk.render/render-unreadable-edn x)))), :hash \"5drRXBniP17rFCk8gwCFLmxTJx4Avj\"}, :nextjournal/render-opts {:id \"lectures.genlite/line-model-lite-result\"}}, :nextjournal/blob-id nil}, :nextjournal/render-opts {:id \"lectures.genlite/line-model-lite-result\"}, :nextjournal/viewer {:name nextjournal.clerk.viewer/result-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-result, :hash \"5dtGVHesd2XCTLFYF3aY4kJvkrX1x1\"}} {:path [], :nextjournal/value \"(into {} (gf/simulate line-model [[1 2 3 4 5]]))\", :nextjournal/render-opts {:loc {:line 69, :end-line 69, :column 1, :end-column 49}, :id \"lectures.genlite/anon-expr-5duCdtW8iW7jo4EUbNBGrdN8eA8L4j-code\"}, :nextjournal/viewer {:name nextjournal.clerk.viewer/code-block-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-code-block, :hash \"5dru1FUcVRTRrVKJFbNw4FG2wXmiwB\"}} {:path [], :nextjournal/value {:nextjournal/presented {:path [], :nextjournal/value [{:path [0], :nextjournal/value [{:path [0 0], :nextjournal/value [{:path [0 0 0], :nextjournal/value :y, :nextjournal/viewer {:name nextjournal.clerk.viewer/keyword-viewer, :render-fn #viewer-fn (fn [x] [:span.cmt-atom.inspected-value (str x)]), :hash \"5dsNzdTzwn7chgKvDeDf7Y1m4rScyE\"}} {:path [0 0 1], :nextjournal/value 0, :nextjournal/viewer {:name nextjournal.clerk.viewer/number-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-number, :hash \"5dr3R1ZvHCoRHpxsQq4D4ARv9BQC7o\"}}], :nextjournal/viewer {:name nextjournal.clerk.viewer/vector-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-coll, :opening-paren \"[\", :closing-paren (\"]\"), :page-size 20, :hash \"5dsD1KJESfc8Dy8gPeGQfZCX2ayE8f\"}} {:path [0 1], :nextjournal/value 2.57324558410091, :nextjournal/viewer {:name nextjournal.clerk.viewer/number-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-number, :hash \"5dr3R1ZvHCoRHpxsQq4D4ARv9BQC7o\"}}], :nextjournal/viewer {:name nextjournal.clerk.viewer/map-entry-viewer, :render-fn #viewer-fn (fn [xs opts] (into [:<>] (comp (nextjournal.clerk.render/inspect-children opts) (interpose \" \")) xs)), :page-size 2, :hash \"5dt6ojEGnSL5A2CUa5cvAyypuTUA5J\"}} {:path [1], :nextjournal/value [{:path [1 0], :nextjournal/value [{:path [1 0 0], :nextjournal/value :y, :nextjournal/viewer {:name nextjournal.clerk.viewer/keyword-viewer, :render-fn #viewer-fn (fn [x] [:span.cmt-atom.inspected-value (str x)]), :hash \"5dsNzdTzwn7chgKvDeDf7Y1m4rScyE\"}} {:path [1 0 1], :nextjournal/value 1, :nextjournal/viewer {:name nextjournal.clerk.viewer/number-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-number, :hash \"5dr3R1ZvHCoRHpxsQq4D4ARv9BQC7o\"}}], :nextjournal/viewer {:name nextjournal.clerk.viewer/vector-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-coll, :opening-paren \"[\", :closing-paren (\"]\"), :page-size 20, :hash \"5dsD1KJESfc8Dy8gPeGQfZCX2ayE8f\"}} {:path [1 1], :nextjournal/value -0.9889029898648767, :nextjournal/viewer {:name nextjournal.clerk.viewer/number-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-number, :hash \"5dr3R1ZvHCoRHpxsQq4D4ARv9BQC7o\"}}], :nextjournal/viewer {:name nextjournal.clerk.viewer/map-entry-viewer, :render-fn #viewer-fn (fn [xs opts] (into [:<>] (comp (nextjournal.clerk.render/inspect-children opts) (interpose \" \")) xs)), :page-size 2, :hash \"5dt6ojEGnSL5A2CUa5cvAyypuTUA5J\"}} {:path [2], :nextjournal/value [{:path [2 0], :nextjournal/value [{:path [2 0 0], :nextjournal/value :y, :nextjournal/viewer {:name nextjournal.clerk.viewer/keyword-viewer, :render-fn #viewer-fn (fn [x] [:span.cmt-atom.inspected-value (str x)]), :hash \"5dsNzdTzwn7chgKvDeDf7Y1m4rScyE\"}} {:path [2 0 1], :nextjournal/value 2, :nextjournal/viewer {:name nextjournal.clerk.viewer/number-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-number, :hash \"5dr3R1ZvHCoRHpxsQq4D4ARv9BQC7o\"}}], :nextjournal/viewer {:name nextjournal.clerk.viewer/vector-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-coll, :opening-paren \"[\", :closing-paren (\"]\"), :page-size 20, :hash \"5dsD1KJESfc8Dy8gPeGQfZCX2ayE8f\"}} {:path [2 1], :nextjournal/value 3.466932987686518, :nextjournal/viewer {:name nextjournal.clerk.viewer/number-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-number, :hash \"5dr3R1ZvHCoRHpxsQq4D4ARv9BQC7o\"}}], :nextjournal/viewer {:name nextjournal.clerk.viewer/map-entry-viewer, :render-fn #viewer-fn (fn [xs opts] (into [:<>] (comp (nextjournal.clerk.render/inspect-children opts) (interpose \" \")) xs)), :page-size 2, :hash \"5dt6ojEGnSL5A2CUa5cvAyypuTUA5J\"}} {:path [3], :nextjournal/value [{:path [3 0], :nextjournal/value [{:path [3 0 0], :nextjournal/value :y, :nextjournal/viewer {:name nextjournal.clerk.viewer/keyword-viewer, :render-fn #viewer-fn (fn [x] [:span.cmt-atom.inspected-value (str x)]), :hash \"5dsNzdTzwn7chgKvDeDf7Y1m4rScyE\"}} {:path [3 0 1], :nextjournal/value 3, :nextjournal/viewer {:name nextjournal.clerk.viewer/number-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-number, :hash \"5dr3R1ZvHCoRHpxsQq4D4ARv9BQC7o\"}}], :nextjournal/viewer {:name nextjournal.clerk.viewer/vector-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-coll, :opening-paren \"[\", :closing-paren (\"]\"), :page-size 20, :hash \"5dsD1KJESfc8Dy8gPeGQfZCX2ayE8f\"}} {:path [3 1], :nextjournal/value -4.552330825997457, :nextjournal/viewer {:name nextjournal.clerk.viewer/number-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-number, :hash \"5dr3R1ZvHCoRHpxsQq4D4ARv9BQC7o\"}}], :nextjournal/viewer {:name nextjournal.clerk.viewer/map-entry-viewer, :render-fn #viewer-fn (fn [xs opts] (into [:<>] (comp (nextjournal.clerk.render/inspect-children opts) (interpose \" \")) xs)), :page-size 2, :hash \"5dt6ojEGnSL5A2CUa5cvAyypuTUA5J\"}} {:path [4], :nextjournal/value [{:path [4 0], :nextjournal/value [{:path [4 0 0], :nextjournal/value :y, :nextjournal/viewer {:name nextjournal.clerk.viewer/keyword-viewer, :render-fn #viewer-fn (fn [x] [:span.cmt-atom.inspected-value (str x)]), :hash \"5dsNzdTzwn7chgKvDeDf7Y1m4rScyE\"}} {:path [4 0 1], :nextjournal/value 4, :nextjournal/viewer {:name nextjournal.clerk.viewer/number-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-number, :hash \"5dr3R1ZvHCoRHpxsQq4D4ARv9BQC7o\"}}], :nextjournal/viewer {:name nextjournal.clerk.viewer/vector-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-coll, :opening-paren \"[\", :closing-paren (\"]\"), :page-size 20, :hash \"5dsD1KJESfc8Dy8gPeGQfZCX2ayE8f\"}} {:path [4 1], :nextjournal/value -7.660754061138227, :nextjournal/viewer {:name nextjournal.clerk.viewer/number-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-number, :hash \"5dr3R1ZvHCoRHpxsQq4D4ARv9BQC7o\"}}], :nextjournal/viewer {:name nextjournal.clerk.viewer/map-entry-viewer, :render-fn #viewer-fn (fn [xs opts] (into [:<>] (comp (nextjournal.clerk.render/inspect-children opts) (interpose \" \")) xs)), :page-size 2, :hash \"5dt6ojEGnSL5A2CUa5cvAyypuTUA5J\"}}], :nextjournal/viewer {:name nextjournal.clerk.viewer/map-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-map, :opening-paren \"{\", :closing-paren (\"}\"), :page-size 10, :hash \"5drc3ac5ux7kS4h2vozdxwsrKDqSmn\"}, :nextjournal/render-opts {:id \"lectures.genlite/anon-expr-5duCdtW8iW7jo4EUbNBGrdN8eA8L4j-result\"}}, :nextjournal/blob-id \"5dtkCmATPDyka4SDwwtBNhRduyfZYE\"}, :nextjournal/render-opts {:id \"lectures.genlite/anon-expr-5duCdtW8iW7jo4EUbNBGrdN8eA8L4j-result\"}, :nextjournal/viewer {:name nextjournal.clerk.viewer/result-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-result, :hash \"5dtGVHesd2XCTLFYF3aY4kJvkrX1x1\"}} {:path [], :nextjournal/value [:div.viewer.markdown-viewer.w-full.max-w-prose.px-8 {:data-block-id \"lectures.genlite/markdown-5ds5zDGcZkVjLQtcF4rAwAPbvDsWCv\"} [:p [:<> \"In order to make use of these implementations of generative functions, we\"] [#viewer-eval nextjournal.clerk.render/inspect-presented {:nextjournal/value [:<> \" \"], :nextjournal/viewer {:name nextjournal.clerk.viewer/html-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-html, :hash \"5drpr3yzJ1CcHNbRHnK2sVyn7YUmXB\"}}] [:<> \"will need to define \"] [:code [:<> \"sample\"]] [:<> \" and pass it in. Critical differences in\"] [#viewer-eval nextjournal.clerk.render/inspect-presented {:nextjournal/value [:<> \" \"], :nextjournal/viewer {:name nextjournal.clerk.viewer/html-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-html, :hash \"5drpr3yzJ1CcHNbRHnK2sVyn7YUmXB\"}}] [:<> \"algorithm behavior can be implemented by different version of \"] [:code [:<> \"sample\"]] [:<> \".\"]] [\"h2\" {:id \"implementing-simulate\"} [:<> \"Implementing \"] [:code [:<> \"simulate\"]]] [:p [:<> \"Let's see how we can implement a version of \"] [:code [:<> \"simulate\"]] [:<> \" using this technique.\"]] [:p [:<> \"Recall that simulate takes a generative function and its arguments and\"] [#viewer-eval nextjournal.clerk.render/inspect-presented {:nextjournal/value [:<> \" \"], :nextjournal/viewer {:name nextjournal.clerk.viewer/html-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-html, :hash \"5drpr3yzJ1CcHNbRHnK2sVyn7YUmXB\"}}] [:<> \"returns a trace representing a sample from the generative function with those\"] [#viewer-eval nextjournal.clerk.render/inspect-presented {:nextjournal/value [:<> \" \"], :nextjournal/viewer {:name nextjournal.clerk.viewer/html-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-html, :hash \"5drpr3yzJ1CcHNbRHnK2sVyn7YUmXB\"}}] [:<> \"arguments. We will need to represent a few things in this program.\"]] [:ul [:li [:p [:strong [:<> \"The set of random choices (\"] [:code [:<> \"ChoiceMap\"]] [:<> \" implementation)\"]] [:<> \". For this, we\"] [#viewer-eval nextjournal.clerk.render/inspect-presented {:nextjournal/value [:<> \" \"], :nextjournal/viewer {:name nextjournal.clerk.viewer/html-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-html, :hash \"5drpr3yzJ1CcHNbRHnK2sVyn7YUmXB\"}}] [:<> \"will simply use a dictionary (hashtable) with keys being linked\"] [#viewer-eval nextjournal.clerk.render/inspect-presented {:nextjournal/value [:<> \" \"], :nextjournal/viewer {:name nextjournal.clerk.viewer/html-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-html, :hash \"5drpr3yzJ1CcHNbRHnK2sVyn7YUmXB\"}}] [:<> \"lists (built from pairs) of symbols and/or other datatypes such as \"] [:code [:<> \":f => 1\"]] [:<> \".\"]]] [:li [:p [:strong [:<> \"The score of the sample\"]] [:<> \". This will be the sum of the log densities or\"] [#viewer-eval nextjournal.clerk.render/inspect-presented {:nextjournal/value [:<> \" \"], :nextjournal/viewer {:name nextjournal.clerk.viewer/html-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-html, :hash \"5drpr3yzJ1CcHNbRHnK2sVyn7YUmXB\"}}] [:<> \"probabilities of each random choice made during sampling.\"]]] [:li [:p [:strong [:<> \"The trace\"]] [:<> \". For this, we will make use of a simple tuple with the following elements:\"]] [:ol [:li [:<> [:<> \"The generative function.\"]]] [:li [:<> [:<> \"The arguments the function was called on.\"]]] [:li [:<> [:<> \"The return value of the function.\"]]] [:li [:<> [:<> \"The set of choices made during sampling.\"]]] [:li [:<> [:<> \"The log probability of the trace that was sampled.\"]]]]]] [#viewer-eval nextjournal.clerk.render/inspect-presented {:nextjournal/value [:div.code-viewer.code-listing [#viewer-eval nextjournal.clerk.render/inspect-presented {:path [0], :nextjournal/value \"function simulate_lite(gen_func, args)\\n\\n    # initialise the set of choices to an empty dictionary\\n    choices = Dict()\\n\\n    # Initialize the density at 1\\n    score = 0.0\\n\\n    # An implementation of the sample function\\n    function sample_(name, distribution, dist_args)\\n\\n        # Create an instance of the relevant distribution from the Distributions library\\n        dist = distribution(dist_args...)\\n\\n        # Sample the value\\n        value = rand(dist)\\n\\n        # Score the value\\n        density = Distributions.logpdf(dist, value)\\n\\n        # Update the log density with the value\\n        score += density\\n\\n        # Record the sampled value with its name\\n        choices[name] = value\\n\\n        return(value)\\n    end\\n\\n    # Call the generative function with the sample function defined\\n    retval = gen_func(sample_, args...)\\n\\n    # return trace as a named tuple\\n    (gen_func=gen_func,\\n        args=args,\\n        retval=retval,\\n        choices=choices,\\n        score=score)\\nend;\\n\\nsimulate_lite(flip_biased_coin_lite, (1000,))\\n\\n\\nsimulate_lite(line_model_lite, ([1.,2.,3.,4.,5.],))\", :nextjournal/render-opts {:language \"julia\"}, :nextjournal/viewer {:name nextjournal.clerk.viewer/code-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-code, :hash \"5dsJQw12yyyd7TcZEf52VSHxnqnJUC\"}}]], :nextjournal/viewer {:name nextjournal.clerk.viewer/html-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-html, :hash \"5drpr3yzJ1CcHNbRHnK2sVyn7YUmXB\"}}]], :nextjournal/render-opts {:id \"lectures.genlite/markdown-5ds5zDGcZkVjLQtcF4rAwAPbvDsWCv\"}, :nextjournal/viewer {:name nextjournal.clerk.viewer/markdown-node-viewer, :render-fn #viewer-fn identity, :hash \"5dsg4Bx9A9L7WvvCgamUoRtxUsmYCe\"}}]}, :nextjournal/viewer {:name nextjournal.clerk.viewer/notebook-viewer, :render-fn #viewer-fn nextjournal.clerk.render/render-notebook, :hash \"5duAFDxE4sCnRX71Wo6zeCpC9C3djE\"}}}, :path->url {\"notebooks/lectures/genlite.clj\" \"notebooks/lectures/genlite.html\", \"notebooks/lectures/smc.clj\" \"notebooks/lectures/smc.html\", \"notebooks/lectures/importance.clj\" \"notebooks/lectures/importance.html\", \"notebooks/lectures/inference.clj\" \"notebooks/lectures/inference.html\", \"notebooks/lectures/simulation.clj\" \"notebooks/lectures/simulation.html\", \"notebooks/lectures/mcmc.clj\" \"notebooks/lectures/mcmc.html\", \"notebooks/lectures/face.clj\" \"notebooks/lectures/face.html\", \"file:/Users/sritchie/.gitlibs/libs/io.github.nextjournal/clerk/d80187013d7b7b96db3d8b114b8d99f687170668/src/nextjournal/clerk/index.clj\" \"\"}, :current-path \"notebooks/lectures/genlite.clj\", :resource->url {\"/js/viewer.js\" \"https://cas.clerk.garden/tree/8VxCcd2nQqrhPLVttyyM5Rnv8qMYcjeSEjgJnhZTvCgVhmgsNWWeusxmVkfX9ajrXmFqQEdVmtdHSoCdHLG2XTsXXB/.clerk/shadow-cljs/main.js\"}, :index \"file:/Users/sritchie/.gitlibs/libs/io.github.nextjournal/clerk/d80187013d7b7b96db3d8b114b8d99f687170668/src/nextjournal/clerk/index.clj\"}".replaceAll('nextjournal.clerk.view/escape-closing-script-tag', 'script')
+viewer.init(viewer.read_string(state))
+</script></body></html>
